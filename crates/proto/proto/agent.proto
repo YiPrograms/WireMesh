@@ -1,0 +1,129 @@
+syntax = "proto3";
+
+package wiremesh.agent.v1;
+
+service AgentControl {
+  rpc Synchronize(stream AgentMessage) returns (stream ControllerMessage);
+}
+
+message AgentMessage {
+  oneof payload {
+    AgentHello hello = 1;
+    Heartbeat heartbeat = 2;
+    GatewayFacts facts = 3;
+    RevisionPrepared prepared = 4;
+    RevisionApplied applied = 5;
+    ApplyError error = 6;
+  }
+}
+
+message ControllerMessage {
+  oneof payload {
+    DesiredSnapshot desired = 1;
+    PrepareMigration prepare_migration = 2;
+    ArmMigration arm_migration = 3;
+    CancelMigration cancel_migration = 4;
+    Ping ping = 5;
+  }
+}
+
+message AgentHello {
+  string agent_id = 1;
+  uint32 protocol_major = 2;
+  uint32 protocol_minor = 3;
+  string agent_version = 4;
+  string boot_id = 5;
+  repeated string capabilities = 6;
+}
+
+message Heartbeat {
+  int64 unix_seconds = 1;
+}
+
+message GatewayFacts {
+  string gateway_id = 1;
+  string public_key = 2;
+  uint32 listen_port = 3;
+  string actual_state_hash = 4;
+  string backend_version = 5;
+}
+
+message DesiredSnapshot {
+  string gateway_id = 1;
+  uint64 revision = 2;
+  string interface_name = 3;
+  uint32 listen_port = 4;
+  optional uint32 mtu = 5;
+  repeated string routes = 6;
+  repeated DesiredPeer peers = 7;
+  string acl_default = 8;
+  repeated AclRule acl_rules = 9;
+  repeated string terminate_sources = 10;
+  bytes credential_envelope = 11;
+  optional string compatibility_address = 12;
+}
+
+message DesiredPeer {
+  string device_id = 1;
+  string user_id = 2;
+  string public_key = 3;
+  string allowed_address = 4;
+  repeated string group_ids = 5;
+}
+
+message AclRule {
+  string id = 1;
+  uint32 position = 2;
+  string action = 3;
+  string destination = 4;
+  string protocol = 5;
+  optional uint32 port_start = 6;
+  optional uint32 port_end = 7;
+  repeated string user_ids = 8;
+  repeated string group_ids = 9;
+  bool enabled = 10;
+}
+
+message PrepareMigration {
+  string migration_id = 1;
+  int64 effective_unix_seconds = 2;
+  DesiredSnapshot future_state = 3;
+}
+
+message RevisionPrepared {
+  string migration_id = 1;
+  string gateway_id = 2;
+  uint64 revision = 3;
+  string state_hash = 4;
+}
+
+message ArmMigration {
+  string migration_id = 1;
+  int64 effective_unix_seconds = 2;
+  string gateway_id = 3;
+}
+
+message CancelMigration {
+  string migration_id = 1;
+  string reason = 2;
+  string gateway_id = 3;
+}
+
+message RevisionApplied {
+  string gateway_id = 1;
+  uint64 revision = 2;
+  string actual_state_hash = 3;
+  int64 applied_unix_seconds = 4;
+}
+
+message ApplyError {
+  string gateway_id = 1;
+  uint64 revision = 2;
+  string code = 3;
+  string message = 4;
+  bool retryable = 5;
+}
+
+message Ping {
+  int64 unix_seconds = 1;
+}

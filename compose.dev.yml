@@ -1,0 +1,21 @@
+services:
+  rust:
+    image: rust:1.88-bookworm
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+      - wiremesh-cargo-registry:/usr/local/cargo/registry
+      - wiremesh-target:/workspace/target
+    environment:
+      CARGO_TERM_COLOR: always
+  web:
+    image: node:22-bookworm
+    working_dir: /workspace/web
+    volumes:
+      - .:/workspace
+      - wiremesh-node-modules:/workspace/web/node_modules
+
+volumes:
+  wiremesh-cargo-registry:
+  wiremesh-target:
+  wiremesh-node-modules:

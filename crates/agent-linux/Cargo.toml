@@ -1,0 +1,28 @@
+[package]
+name = "wiremesh-agent-linux"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+async-trait.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+uuid.workspace = true
+wiremesh-agent-core = { path = "../agent-core" }
+wiremesh-domain = { path = "../domain" }
+
+[dev-dependencies]
+base64.workspace = true
+tempfile = "3.15"
+
+[[bin]]
+name = "wiremesh-agent-linux"
+path = "src/main.rs"

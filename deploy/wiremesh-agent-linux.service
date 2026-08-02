@@ -1,0 +1,26 @@
+[Unit]
+Description=WireMesh Linux gateway agent
+Documentation=https://github.com/example/wiremesh
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/wiremesh/agent.env
+ExecStart=/usr/local/sbin/wiremesh-agent-linux
+Restart=always
+RestartSec=5s
+StateDirectory=wiremesh
+StateDirectoryMode=0700
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/wiremesh /etc/wireguard
+CapabilityBoundingSet=CAP_NET_ADMIN
+AmbientCapabilities=CAP_NET_ADMIN
+RestrictAddressFamilies=AF_INET AF_INET6 AF_NETLINK
+
+[Install]
+WantedBy=multi-user.target
+

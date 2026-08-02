@@ -1,0 +1,58 @@
+[workspace]
+resolver = "2"
+members = [
+  "crates/domain",
+  "crates/proto",
+  "crates/agent-core",
+  "crates/agent-linux",
+  "crates/agent-mikrotik",
+  "crates/controller",
+  "crates/key-wasm",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license = "Apache-2.0"
+
+[workspace.dependencies]
+anyhow = "1.0"
+argon2 = "0.5"
+async-trait = "0.1"
+axum = "0.8"
+base64 = "0.22"
+chrono = { version = "0.4", features = ["serde"] }
+chacha20poly1305 = "0.10"
+clap = { version = "4.5", features = ["derive", "env"] }
+csv = "1.3"
+futures = "0.3"
+http = "1.2"
+ipnet = { version = "2.11", features = ["serde"] }
+ldap3 = { version = "0.12.1", default-features = false, features = ["tls-rustls-ring"] }
+lettre = { version = "0.11", default-features = false, features = ["builder", "hostname", "smtp-transport", "tokio1-rustls-tls"] }
+openidconnect = { version = "4.0.1", default-features = false, features = ["reqwest", "rustls-tls", "timing-resistant-secret-traits"] }
+prost = "0.13"
+rand = "0.8"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.10"
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite", "migrate", "macros", "chrono", "uuid", "json"] }
+thiserror = "2.0"
+tokio = { version = "1.43", features = ["full"] }
+tokio-stream = "0.1"
+tonic = { version = "0.12", features = ["tls"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["catch-panic", "compression-gzip", "cors", "fs", "request-id", "sensitive-headers", "trace"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+url = { version = "2.5", features = ["serde"] }
+uuid = { version = "1.12", features = ["serde", "v4", "v7"] }
+zeroize = { version = "1.8", features = ["derive"] }
+subtle = "2.6"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"

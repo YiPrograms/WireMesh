@@ -1,0 +1,27 @@
+[package]
+name = "wiremesh-agent-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+async-trait.workspace = true
+chrono.workspace = true
+futures.workspace = true
+ipnet.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+tonic.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+wiremesh-domain = { path = "../domain" }
+wiremesh-proto = { path = "../proto" }
+
+[dev-dependencies]
+tempfile = "3.15"

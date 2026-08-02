@@ -1,0 +1,9 @@
+/target
+/web/node_modules
+/web/dist
+/.env
+/*.db
+/*.db-shm
+/*.db-wal
+/coverage
+/.cache

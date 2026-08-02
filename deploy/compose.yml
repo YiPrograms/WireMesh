@@ -1,0 +1,27 @@
+services:
+  controller:
+    build:
+      context: ..
+      dockerfile: deploy/controller.Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+      - "8443:8443"
+    environment:
+      WIREMESH_AGENT_TLS_CERT: /run/tls/controller.crt
+      WIREMESH_AGENT_TLS_KEY: /run/tls/controller.key
+      RUST_LOG: wiremesh_controller=info,tower_http=info
+    volumes:
+      - wiremesh-data:/var/lib/wiremesh
+      - ./secrets/master.key:/run/secrets/wiremesh_master_key:ro
+      - ./tls:/run/tls:ro
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/wiremesh-controller", "--database-url", "sqlite:///var/lib/wiremesh/wiremesh.db", "migrate"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  wiremesh-data:
+
