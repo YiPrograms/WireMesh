@@ -9,9 +9,8 @@ WireMesh is designed for organizations that want a small, understandable VPN
 control plane without placing client private keys in a SaaS service—or even in
 the WireMesh database.
 
-> WireMesh is currently an early-stage project. Review the
-> [acceptance requirements](req.md) and test Linux/RouterOS behavior in your
-> environment before production use.
+> WireMesh is currently an early-stage project. Test Linux and RouterOS
+> behavior in your environment before production use.
 
 ## Why WireMesh?
 
@@ -75,9 +74,6 @@ the WireMesh database.
 - SMTP enrollment, reset, access, profile, and migration notifications
 - Health, readiness, and Prometheus endpoints
 - Multi-architecture GHCR images and static Linux release artifacts
-
-The complete normative behavior and supported scale are defined in
-[req.md](req.md).
 
 ## Deployment architecture
 

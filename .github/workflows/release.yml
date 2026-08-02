@@ -83,7 +83,7 @@ jobs:
           install -m 0755 "target/${TARGET}/release/wiremesh-agent-linux" staging/bin/
           install -m 0755 "target/${TARGET}/release/wiremesh-agent-mikrotik" staging/bin/
           install -m 0644 deploy/wiremesh-agent-linux.service deploy/agent.env.example staging/deploy/
-          install -m 0644 README.md req.md staging/
+          install -m 0644 README.md staging/
           tar -C staging -czf "${archive}" .
           sha256sum "${archive}" > "${archive}.sha256"
       - uses: actions/upload-artifact@v4
