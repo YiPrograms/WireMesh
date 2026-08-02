@@ -96,22 +96,38 @@ jobs:
           retention-days: 30
 
   containers:
-    name: Container (${{ matrix.component }})
+    name: Container (${{ matrix.component }}, ${{ matrix.arch }})
     needs: test
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
       packages: write
-      attestations: write
-      id-token: write
     strategy:
       fail-fast: false
       matrix:
         include:
           - component: controller
+            arch: amd64
+            runner: ubuntu-24.04
+            platform: linux/amd64
+            suffix: ""
+            dockerfile: deploy/controller.Dockerfile
+          - component: controller
+            arch: arm64
+            runner: ubuntu-24.04-arm
+            platform: linux/arm64
             suffix: ""
             dockerfile: deploy/controller.Dockerfile
           - component: mikrotik-agent
+            arch: amd64
+            runner: ubuntu-24.04
+            platform: linux/amd64
+            suffix: -mikrotik-agent
+            dockerfile: deploy/mikrotik-agent.Dockerfile
+          - component: mikrotik-agent
+            arch: arm64
+            runner: ubuntu-24.04-arm
+            platform: linux/arm64
             suffix: -mikrotik-agent
             dockerfile: deploy/mikrotik-agent.Dockerfile
     steps:
@@ -123,11 +139,75 @@ jobs:
         run: |
           repository="${GITHUB_REPOSITORY,,}"
           echo "name=ghcr.io/${repository}${SUFFIX}" >> "$GITHUB_OUTPUT"
-      - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
       - name: Log in to GHCR
         if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and publish platform image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: ${{ matrix.platform }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          outputs: type=image,name=${{ steps.image.outputs.name }},push-by-digest=true,name-canonical=true,push=${{ github.event_name != 'pull_request' }}
+          cache-from: type=gha,scope=${{ matrix.component }}-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.component }}-${{ matrix.arch }}
+      - name: Export image digest
+        if: github.event_name != 'pull_request'
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p /tmp/digests
+          touch "/tmp/digests/${DIGEST#sha256:}"
+      - name: Upload image digest
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: container-digests-${{ matrix.component }}-${{ matrix.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  container-manifests:
+    name: Manifest (${{ matrix.component }})
+    if: github.event_name != 'pull_request'
+    needs: containers
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    strategy:
+      matrix:
+        include:
+          - component: controller
+            suffix: ""
+          - component: mikrotik-agent
+            suffix: -mikrotik-agent
+    steps:
+      - name: Resolve lowercase image name
+        id: image
+        env:
+          SUFFIX: ${{ matrix.suffix }}
+        run: |
+          repository="${GITHUB_REPOSITORY,,}"
+          echo "name=ghcr.io/${repository}${SUFFIX}" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: container-digests-${{ matrix.component }}-*
+          path: /tmp/digests
+          merge-multiple: true
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -144,33 +224,39 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=sha,prefix=sha-
             type=raw,value=latest,enable={{is_default_branch}}
-          labels: |
-            org.opencontainers.image.title=WireMesh ${{ matrix.component }}
-            org.opencontainers.image.description=WireMesh on-premises WireGuard access ${{ matrix.component }}
-      - name: Build and publish image
-        id: build
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ${{ matrix.dockerfile }}
-          platforms: linux/amd64,linux/arm64
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=${{ matrix.component }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.component }}
+      - name: Create multi-architecture manifest
+        id: manifest
+        env:
+          IMAGE: ${{ steps.image.outputs.name }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          mapfile -t tags <<< "$TAGS"
+          tag_args=()
+          for tag in "${tags[@]}"; do
+            tag_args+=(--tag "$tag")
+          done
+          sources=()
+          for digest_file in /tmp/digests/*; do
+            sources+=("${IMAGE}@sha256:$(basename "$digest_file")")
+          done
+          if [ "${#sources[@]}" -ne 2 ]; then
+            echo "expected two platform digests, found ${#sources[@]}" >&2
+            exit 1
+          fi
+          docker buildx imagetools create "${tag_args[@]}" "${sources[@]}"
+          digest="sha256:$(docker buildx imagetools inspect "${tags[0]}" --raw | sha256sum | cut -d' ' -f1)"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
       - name: Attest published image
-        if: github.event_name != 'pull_request'
         uses: actions/attest@v4
         with:
           subject-name: ${{ steps.image.outputs.name }}
-          subject-digest: ${{ steps.build.outputs.digest }}
+          subject-digest: ${{ steps.manifest.outputs.digest }}
           push-to-registry: true
 
   release:
     name: Publish GitHub Release assets
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [binaries, containers]
+    needs: [binaries, container-manifests]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
