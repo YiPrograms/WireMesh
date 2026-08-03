@@ -130,6 +130,18 @@ jobs:
             platform: linux/arm64
             suffix: -mikrotik-agent
             dockerfile: deploy/mikrotik-agent.Dockerfile
+          - component: linux-agent
+            arch: amd64
+            runner: ubuntu-24.04
+            platform: linux/amd64
+            suffix: -linux-agent
+            dockerfile: deploy/linux-agent.Dockerfile
+          - component: linux-agent
+            arch: arm64
+            runner: ubuntu-24.04-arm
+            platform: linux/arm64
+            suffix: -linux-agent
+            dockerfile: deploy/linux-agent.Dockerfile
     steps:
       - uses: actions/checkout@v6
       - name: Resolve lowercase image name
@@ -193,6 +205,8 @@ jobs:
             suffix: ""
           - component: mikrotik-agent
             suffix: -mikrotik-agent
+          - component: linux-agent
+            suffix: -linux-agent
     steps:
       - name: Resolve lowercase image name
         id: image

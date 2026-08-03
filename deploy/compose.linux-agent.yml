@@ -1,0 +1,17 @@
+services:
+  linux-agent:
+    image: ${WIREMESH_LINUX_AGENT_IMAGE:-ghcr.io/yiprograms/wiremesh-linux-agent:latest}
+    restart: unless-stopped
+    init: true
+    network_mode: host
+    privileged: true
+    environment:
+      WIREMESH_CONTROLLER_URL: ${WIREMESH_CONTROLLER_URL:?Set WIREMESH_CONTROLLER_URL}
+      WIREMESH_CONTROLLER_SERVER_NAME: ${WIREMESH_CONTROLLER_SERVER_NAME:?Set WIREMESH_CONTROLLER_SERVER_NAME}
+      WIREMESH_CONTROLLER_CA: /etc/wiremesh/controller-ca.pem
+      WIREMESH_AGENT_ID: ${WIREMESH_AGENT_ID:?Set WIREMESH_AGENT_ID}
+      WIREMESH_AGENT_SECRET: ${WIREMESH_AGENT_SECRET:?Set WIREMESH_AGENT_SECRET}
+      WIREMESH_STATE_DIRECTORY: /var/lib/wiremesh
+    volumes:
+      - ${WIREMESH_LINUX_AGENT_DATA_PATH:-./data/linux-agent}:/var/lib/wiremesh
+      - ${WIREMESH_AGENT_CONFIG_PATH:-./config}:/etc/wiremesh:ro

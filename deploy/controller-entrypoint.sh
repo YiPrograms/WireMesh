@@ -1,13 +1,24 @@
 #!/bin/sh
 set -eu
 
+data_directory=${WIREMESH_DATA_DIRECTORY:-/var/lib/wiremesh}
+
+# Docker creates a missing bind-mount source as a root-owned directory. Prepare
+# it before dropping privileges so a completely empty host directory works on
+# first startup as well as subsequent upgrades.
+if [ "$(id -u)" -eq 0 ]; then
+  umask 077
+  mkdir -p "$data_directory"
+  chown -R wiremesh:wiremesh "$data_directory"
+  exec gosu wiremesh "$0" "$@"
+fi
+
 # Administrative subcommands must retain their normal one-shot behavior. Only
 # the long-running server performs persistent first-start initialization.
 if [ "${1:-serve}" != "serve" ]; then
   exec wiremesh-controller "$@"
 fi
 
-data_directory=${WIREMESH_DATA_DIRECTORY:-/var/lib/wiremesh}
 if [ -n "${WIREMESH_MASTER_KEY_FILE:-}" ]; then
   master_key_file=$WIREMESH_MASTER_KEY_FILE
 elif [ -s /run/secrets/wiremesh_master_key ]; then

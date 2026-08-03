@@ -11,8 +11,5 @@ services:
       WIREMESH_AGENT_SECRET: ${WIREMESH_AGENT_SECRET:?Set WIREMESH_AGENT_SECRET}
       WIREMESH_STATE_DIRECTORY: /var/lib/wiremesh
     volumes:
-      - wiremesh-data:/controller-data:ro
-      - mikrotik-agent-data:/var/lib/wiremesh
-
-volumes:
-  mikrotik-agent-data:
+      - ${WIREMESH_DATA_PATH:-./data/controller}:/controller-data:ro
+      - ${WIREMESH_MIKROTIK_DATA_PATH:-./data/mikrotik-agent}:/var/lib/wiremesh

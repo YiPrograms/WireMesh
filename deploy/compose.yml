@@ -13,13 +13,10 @@ services:
       WIREMESH_BOOTSTRAP_ADMIN_NAME: ${WIREMESH_ADMIN_NAME:-Administrator}
       RUST_LOG: wiremesh_controller=info,tower_http=info
     volumes:
-      - wiremesh-data:/var/lib/wiremesh
+      - ${WIREMESH_DATA_PATH:-./data/controller}:/var/lib/wiremesh
     healthcheck:
       test: ["CMD", "/usr/local/bin/wiremesh-controller", "--database-url", "sqlite:///var/lib/wiremesh/wiremesh.db", "migrate"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 10s
-
-volumes:
-  wiremesh-data:

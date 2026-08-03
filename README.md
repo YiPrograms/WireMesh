@@ -73,7 +73,8 @@ the WireMesh database.
 - Append-only control-plane audit history
 - SMTP enrollment, reset, access, profile, and migration notifications
 - Health, readiness, and Prometheus endpoints
-- Multi-architecture GHCR images and static Linux release artifacts
+- Multi-architecture controller and gateway-agent images on GHCR, plus static
+  Linux release artifacts
 
 ## Deployment architecture
 
@@ -104,8 +105,8 @@ with random 256-bit bearer secrets. Mutual TLS is not required.
 
 The controller never stores client or gateway WireGuard private keys. Its
 master key encrypts identity-provider, SMTP, and RouterOS credentials. The
-container creates that key in its persistent volume; keep a protected backup
-alongside every database backup.
+container creates that key in its persistent data directory; keep a protected
+backup alongside every database backup.
 
 ## Quick start with GHCR
 
@@ -127,14 +128,11 @@ services:
       WIREMESH_BOOTSTRAP_ADMIN_EMAIL: admin@example.com
       WIREMESH_BOOTSTRAP_ADMIN_NAME: Administrator
     volumes:
-      - wiremesh-data:/var/lib/wiremesh
-
-volumes:
-  wiremesh-data:
+      - ./data/controller:/var/lib/wiremesh
 ```
 
-On its first startup the container automatically creates, inside the persistent
-volume:
+On its first startup the container prepares the empty bind-mounted directory
+and automatically creates:
 
 - the SQLite database
 - a random 256-bit master key
@@ -239,39 +237,63 @@ docker compose exec controller \
 Copy the returned agent ID and secret immediately; the secret is displayed only
 once.
 
-For a Linux gateway, download the static release archive for its architecture,
-install `bin/wiremesh-agent-linux` as `/usr/local/sbin/wiremesh-agent-linux`,
-and install:
+The Linux agent is available as a container with all required user-space tools.
+It uses the host network namespace and privileged mode so that WireGuard,
+routes, forwarding, nftables, and conntrack changes apply to the gateway host.
+The host needs Docker Compose and a WireGuard-capable Linux kernel.
 
-- `deploy/wiremesh-agent-linux.service` as a systemd unit
-- `deploy/agent.env.example` as `/etc/wiremesh/agent.env`, with real values
-
-The gateway host must provide `wireguard-tools`, `iproute2`, `nftables`,
-`conntrack`, and `sysctl`. Its protected LAN must route the WireMesh client pool
-back through the gateway unless the gateway is already its default router.
-
-Export the generated CA, copy it to `/etc/wiremesh/controller-ca.pem` on the
-gateway, and then configure
-`/etc/wiremesh/agent.env` using the ID and secret returned above:
+On the controller host, export the automatically generated agent CA and copy it
+to the gateway:
 
 ```sh
 docker compose cp \
   controller:/var/lib/wiremesh/tls/controller-ca.pem \
   ./controller-ca.pem
 scp ./controller-ca.pem gateway:/tmp/controller-ca.pem
-ssh gateway 'sudo install -m 0444 /tmp/controller-ca.pem /etc/wiremesh/controller-ca.pem'
 ```
 
-```dotenv
+On the gateway host, download the agent Compose file and create its environment
+file using the one-time credentials returned above:
+
+```sh
+sudo mkdir -p /opt/wiremesh
+cd /opt/wiremesh
+sudo mkdir -p config data/linux-agent
+sudo install -m 0600 /tmp/controller-ca.pem ./config/controller-ca.pem
+sudo curl -fsSL \
+  https://raw.githubusercontent.com/YiPrograms/WireMesh/main/deploy/compose.linux-agent.yml \
+  -o compose.yml
+
+sudo tee .env >/dev/null <<'EOF'
 WIREMESH_CONTROLLER_URL=https://vpn.example.org:8443
 WIREMESH_CONTROLLER_SERVER_NAME=vpn.example.org
-WIREMESH_CONTROLLER_CA=/etc/wiremesh/controller-ca.pem
 WIREMESH_AGENT_ID=00000000-0000-0000-0000-000000000000
 WIREMESH_AGENT_SECRET=replace-with-the-one-time-agent-secret
-WIREMESH_STATE_DIRECTORY=/var/lib/wiremesh
+EOF
+sudo chmod 0600 .env config/controller-ca.pem
+
+sudo docker compose up -d
+sudo docker compose logs -f linux-agent
 ```
 
-Then enable the supplied systemd service:
+The agent initializes the empty `data/linux-agent` bind directory on first
+startup. That directory preserves the gateway's WireGuard private key and
+cached desired state across container replacements. Startup fails with a clear
+error if `config/controller-ca.pem` was not copied, instead of letting Docker
+silently substitute an empty directory. The gateway's protected LAN must route
+the WireMesh client pool back through this host unless it is already the LAN's
+default router; WireMesh does not add SNAT.
+
+This container has unrestricted control over host networking. Only run a
+trusted WireMesh image, pin a release tag for production, and limit access to
+the Docker daemon and `/opt/wiremesh/.env`.
+
+To run without Docker, download the static release archive for the gateway's
+architecture, install `bin/wiremesh-agent-linux` as
+`/usr/local/sbin/wiremesh-agent-linux`, and install
+`deploy/wiremesh-agent-linux.service` plus `deploy/agent.env.example`. The host
+must then provide `wireguard-tools`, `iproute2`, `nftables`, `conntrack`, and
+`sysctl`. After configuring `/etc/wiremesh/agent.env`, enable the service:
 
 ```sh
 sudo systemctl daemon-reload
@@ -306,11 +328,8 @@ services:
       WIREMESH_AGENT_SECRET: replace-with-the-one-time-agent-secret
       WIREMESH_STATE_DIRECTORY: /var/lib/wiremesh
     volumes:
-      - wiremesh-data:/controller-data:ro
-      - mikrotik-agent-data:/var/lib/wiremesh
-
-volumes:
-  mikrotik-agent-data:
+      - ./data/controller:/controller-data:ro
+      - ./data/mikrotik-agent:/var/lib/wiremesh
 ```
 
 Alternatively, download that overlay and provide the returned credentials as
@@ -326,6 +345,10 @@ export WIREMESH_AGENT_SECRET=replace-with-the-one-time-agent-secret
 docker compose -f compose.yml -f compose.mikrotik.yml up -d mikrotik-agent
 docker compose -f compose.yml -f compose.mikrotik.yml logs -f mikrotik-agent
 ```
+
+The connector entrypoint prepares an empty `data/mikrotik-agent` bind directory
+before dropping privileges. It also refuses to start if the controller CA is
+missing or empty.
 
 Configure each RouterOS HTTPS origin and credential in the Sites page. The
 credential remains encrypted in the controller and is delivered to the
@@ -415,10 +438,11 @@ Repository layout:
 - `web` — React and TypeScript console
 - `deploy` — Dockerfiles, Compose, systemd unit, and environment examples
 
-Pull requests run the Rust and web test suites, build both container images, and
-produce x86-64 and ARM64 static artifacts. Pushes to `main` publish `latest` and
-SHA-tagged GHCR images. A `v*` tag additionally publishes semantic-version image
-tags and attaches binary archives plus SHA-256 checksums to a GitHub Release.
+Pull requests run the Rust and web test suites, build the controller and both
+gateway-agent container images, and produce x86-64 and ARM64 static artifacts.
+Pushes to `main` publish `latest` and SHA-tagged GHCR images. A `v*` tag
+additionally publishes semantic-version image tags and attaches binary archives
+plus SHA-256 checksums to a GitHub Release.
 
 ## Security model and limitations
 
