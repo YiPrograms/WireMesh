@@ -4129,7 +4129,7 @@ checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
 
 [[package]]
 name = "wiremesh-agent-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4152,7 +4152,7 @@ dependencies = [
 
 [[package]]
 name = "wiremesh-agent-linux"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4172,7 +4172,7 @@ dependencies = [
 
 [[package]]
 name = "wiremesh-agent-mikrotik"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4193,7 +4193,7 @@ dependencies = [
 
 [[package]]
 name = "wiremesh-controller"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "argon2",
@@ -4232,7 +4232,7 @@ dependencies = [
 
 [[package]]
 name = "wiremesh-domain"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -4247,7 +4247,7 @@ dependencies = [
 
 [[package]]
 name = "wiremesh-key-wasm"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "base64 0.22.1",
  "getrandom 0.2.17",
@@ -4260,7 +4260,7 @@ dependencies = [
 
 [[package]]
 name = "wiremesh-proto"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "prost",
  "protoc-bin-vendored",
