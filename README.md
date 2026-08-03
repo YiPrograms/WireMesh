@@ -108,118 +108,156 @@ back up that key separately from SQLite.
 
 ## Quick start with GHCR
 
-### 1. Prerequisites
+You need a Linux host with Docker Engine, Docker Compose v2, OpenSSL, `curl`,
+and a DNS name that resolves to the host from every gateway. The quick start
+creates all required secrets without overwriting existing ones:
 
-You need Docker Engine with Compose, a DNS name reachable by gateway agents,
-and a TLS certificate for that name. The example exposes:
+- a random 256-bit controller master key
+- a hostname-valid self-signed TLS certificate for the agent endpoint
+- the CA certificate that Linux and MikroTik agents must trust
+- a Compose `.env` file with the selected hostname and images
+- a persistent SQLite Docker volume
+- the first administrator's seven-day enrollment token
 
-- `8080/tcp` for the web/API endpoint, normally behind an HTTPS reverse proxy
-- `8443/tcp` for agent gRPC over TLS
+### Automated installation
 
-GitHub Actions publishes these multi-architecture images:
+Replace the hostname and administrator email, then run:
 
-- `ghcr.io/yiprograms/wiremesh` — controller and web console
-- `ghcr.io/yiprograms/wiremesh-mikrotik-agent` — optional RouterOS connector
+```sh
+mkdir wiremesh && cd wiremesh
 
-Use a release tag such as `1.2.3` for stable deployments; `latest` follows the
-default branch.
+curl -fsSLO https://raw.githubusercontent.com/YiPrograms/WireMesh/main/deploy/compose.quickstart.yml
+curl -fsSLO https://raw.githubusercontent.com/YiPrograms/WireMesh/main/deploy/quickstart.sh
+chmod +x quickstart.sh
 
-### 2. Create `compose.yml`
-
-```yaml
-services:
-  controller:
-    image: ${WIREMESH_IMAGE:?Set WIREMESH_IMAGE to the controller GHCR image}
-    restart: unless-stopped
-    ports:
-      - "8080:8080"
-      - "8443:8443"
-    environment:
-      WIREMESH_AGENT_TLS_CERT: /run/tls/controller.crt
-      WIREMESH_AGENT_TLS_KEY: /run/tls/controller.key
-      RUST_LOG: wiremesh_controller=info,tower_http=info
-    volumes:
-      - wiremesh-data:/var/lib/wiremesh
-      - ./secrets/master.key:/run/secrets/wiremesh_master_key:ro
-      - ./tls:/run/tls:ro
-    healthcheck:
-      test:
-        - CMD
-        - /usr/local/bin/wiremesh-controller
-        - --database-url
-        - sqlite:///var/lib/wiremesh/wiremesh.db
-        - migrate
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
-
-  mikrotik-agent:
-    image: ${WIREMESH_MIKROTIK_IMAGE:-ghcr.io/yiprograms/wiremesh-mikrotik-agent:latest}
-    profiles: [mikrotik]
-    restart: unless-stopped
-    environment:
-      WIREMESH_CONTROLLER_URL: https://controller.example.org:8443
-      WIREMESH_CONTROLLER_SERVER_NAME: controller.example.org
-      WIREMESH_CONTROLLER_CA: /run/controller-ca/controller-ca.pem
-      WIREMESH_AGENT_ID: ${WIREMESH_AGENT_ID}
-      WIREMESH_AGENT_SECRET: ${WIREMESH_AGENT_SECRET}
-      WIREMESH_STATE_DIRECTORY: /var/lib/wiremesh
-    volumes:
-      - mikrotik-agent-data:/var/lib/wiremesh
-      - ./tls/controller-ca.pem:/run/controller-ca/controller-ca.pem:ro
-
-volumes:
-  wiremesh-data:
-  mikrotik-agent-data:
+./quickstart.sh vpn.example.org admin@example.org "VPN Administrator"
 ```
 
-The MikroTik service is behind a Compose profile and is not started unless you
-explicitly enable it.
+The script pulls `ghcr.io/yiprograms/wiremesh:latest`, generates `secrets/` and
+`tls/`, starts the controller, waits for `/readyz`, then prints the one-time
+administrator enrollment response. It is safe to rerun: the master key and TLS
+key are retained if they already exist.
 
-### 3. Create secrets and start WireMesh
+The console listens on `127.0.0.1:8080` by default and is not exposed to the
+network. Port `8443` is the TLS agent endpoint. Complete the HTTPS setup below,
+then choose local enrollment and enter the token printed by the script. For a
+local evaluation instead, tunnel the console with
+`ssh -L 8080:127.0.0.1:8080 user@SERVER-IP` and open
+`http://127.0.0.1:8080`.
 
-Place your agent-endpoint certificate and key at `tls/controller.crt` and
-`tls/controller.key`. Put the CA certificate that agents should trust at
-`tls/controller-ca.pem`.
+### Put the web console behind HTTPS
+
+First create a public DNS `A`/`AAAA` record for `vpn.example.org` that points to
+the controller host. Allow inbound TCP ports `80`, `443`, and `8443`; port
+`8080` does not need to be exposed publicly. On Debian or Ubuntu, install Caddy
+and configure the complete reverse proxy with:
+
+```sh
+export WIREMESH_HOST=vpn.example.org
+
+sudo apt-get update
+sudo apt-get install -y caddy
+
+printf '%s\n' \
+  "$WIREMESH_HOST {" \
+  '    reverse_proxy 127.0.0.1:8080' \
+  '}' | sudo tee /etc/caddy/Caddyfile >/dev/null
+
+sudo caddy validate --config /etc/caddy/Caddyfile
+sudo systemctl enable --now caddy
+sudo systemctl reload caddy
+```
+
+Caddy obtains and renews the browser certificate automatically once DNS and
+ports `80`/`443` are reachable. Open `https://vpn.example.org` to enroll the
+administrator. The self-signed certificate created by `quickstart.sh` remains
+on port `8443` exclusively for gateway agents; copy
+`tls/controller-ca.pem` to each gateway as described below.
+
+For an internal-only hostname, use your organization's existing reverse proxy
+and private CA instead. The controller remains on `127.0.0.1:8080` behind that
+proxy.
+
+Use an immutable release image instead of `latest` by setting it before running
+the script:
 
 ```sh
 export WIREMESH_IMAGE=ghcr.io/yiprograms/wiremesh:1.2.3
-
-mkdir -p secrets tls
-docker run --rm "$WIREMESH_IMAGE" generate-master-key > secrets/master.key
-chmod 0400 secrets/master.key tls/controller.key
-chmod 0444 tls/controller.crt tls/controller-ca.pem
-sudo chown 10001:10001 secrets/master.key tls/controller.key
-
-docker compose pull controller
-docker compose up -d controller
-docker compose ps
+./quickstart.sh vpn.example.org admin@example.org "VPN Administrator"
 ```
 
-Public GHCR packages require no registry login. For a private package, first run
-`docker login ghcr.io` with a token containing `read:packages`.
+Public GHCR packages require no login. For a private package, first run
+`docker login ghcr.io` using a token with `read:packages`.
 
-### 4. Bootstrap the administrator
+### Manual installation and TLS generation
 
-The command prints a seven-day, single-use enrollment token. Open the web
-console, select local enrollment, and use that token to set the first password.
+These are the equivalent commands used by the script. They are useful when
+integrating WireMesh into an existing deployment process.
 
 ```sh
-docker compose exec controller wiremesh-controller bootstrap-admin \
+export WIREMESH_HOST=vpn.example.org
+export WIREMESH_IMAGE=ghcr.io/yiprograms/wiremesh:latest
+
+mkdir -p wiremesh/secrets wiremesh/tls
+cd wiremesh
+chmod 0755 secrets tls
+
+# Download the ready-to-run Compose definition.
+curl -fsSLO https://raw.githubusercontent.com/YiPrograms/WireMesh/main/deploy/compose.quickstart.yml
+
+# Generate the controller credential-encryption key.
+umask 077
+docker run --rm "$WIREMESH_IMAGE" generate-master-key > secrets/master.key
+
+# Generate a self-signed certificate for the agent TLS endpoint.
+openssl req -x509 -newkey rsa:3072 -sha256 -nodes -days 825 \
+  -keyout tls/controller.key \
+  -out tls/controller.crt \
+  -subj "/CN=$WIREMESH_HOST" \
+  -addext "subjectAltName=DNS:$WIREMESH_HOST" \
+  -addext "basicConstraints=critical,CA:TRUE" \
+  -addext "keyUsage=critical,digitalSignature,keyEncipherment,keyCertSign" \
+  -addext "extendedKeyUsage=serverAuth"
+
+# Agents use this copy as their trust anchor.
+cp tls/controller.crt tls/controller-ca.pem
+
+# The controller runs as UID 10001 and needs read access to both private files.
+sudo chown 10001:10001 secrets/master.key tls/controller.key
+chmod 0400 secrets/master.key tls/controller.key
+chmod 0444 tls/controller.crt tls/controller-ca.pem
+
+cat > .env <<EOF
+WIREMESH_HOST=$WIREMESH_HOST
+WIREMESH_IMAGE=$WIREMESH_IMAGE
+WIREMESH_MIKROTIK_IMAGE=ghcr.io/yiprograms/wiremesh-mikrotik-agent:latest
+WIREMESH_HTTP_BIND=127.0.0.1
+WIREMESH_HTTP_PORT=8080
+WIREMESH_AGENT_PORT=8443
+EOF
+chmod 0600 .env
+
+docker compose -f compose.quickstart.yml pull controller
+docker compose -f compose.quickstart.yml up -d controller
+curl --fail http://127.0.0.1:8080/readyz
+
+docker compose -f compose.quickstart.yml exec controller \
+  wiremesh-controller bootstrap-admin \
   --email admin@example.org \
   --name Administrator
 ```
 
-Visit `http://localhost:8080` for a local evaluation, or the HTTPS hostname
-configured in your reverse proxy.
+Keep `secrets/master.key` backed up separately from the database. Losing it
+makes encrypted identity, SMTP, and RouterOS settings unrecoverable. Do not
+commit `.env`, `secrets/`, or `tls/controller.key` to source control.
 
-### 5. Connect a gateway
+### Connect a Linux gateway
 
 Create an agent in the administration console, or use the CLI:
 
 ```sh
-docker compose exec controller wiremesh-controller create-agent \
+docker compose -f compose.quickstart.yml exec controller \
+  wiremesh-controller create-agent \
   --name edge-1 \
   --kind linux
 ```
@@ -238,14 +276,40 @@ The gateway host must provide `wireguard-tools`, `iproute2`, `nftables`,
 `conntrack`, and `sysctl`. Its protected LAN must route the WireMesh client pool
 back through the gateway unless the gateway is already its default router.
 
-For MikroTik, create an agent with `--kind mikrotik`, export its ID and secret,
-then start the optional connector:
+Copy `tls/controller-ca.pem` from the controller host to
+`/etc/wiremesh/controller-ca.pem` on the gateway. Configure
+`/etc/wiremesh/agent.env` using the ID and secret returned above:
+
+```dotenv
+WIREMESH_CONTROLLER_URL=https://vpn.example.org:8443
+WIREMESH_CONTROLLER_SERVER_NAME=vpn.example.org
+WIREMESH_CONTROLLER_CA=/etc/wiremesh/controller-ca.pem
+WIREMESH_AGENT_ID=00000000-0000-0000-0000-000000000000
+WIREMESH_AGENT_SECRET=replace-with-the-one-time-agent-secret
+WIREMESH_STATE_DIRECTORY=/var/lib/wiremesh
+```
+
+Then enable the supplied systemd service:
 
 ```sh
-export WIREMESH_AGENT_ID=00000000-0000-0000-0000-000000000000
-export WIREMESH_AGENT_SECRET=replace-with-the-one-time-secret
-export WIREMESH_MIKROTIK_IMAGE=ghcr.io/yiprograms/wiremesh-mikrotik-agent:1.2.3
-docker compose --profile mikrotik up -d mikrotik-agent
+sudo systemctl daemon-reload
+sudo systemctl enable --now wiremesh-agent-linux
+sudo systemctl status wiremesh-agent-linux
+```
+
+### Connect a MikroTik gateway
+
+Create an agent with `--kind mikrotik`, place its returned ID and secret in
+`.env`, then start the optional connector profile:
+
+```sh
+cat >> .env <<'EOF'
+WIREMESH_AGENT_ID=00000000-0000-0000-0000-000000000000
+WIREMESH_AGENT_SECRET=replace-with-the-one-time-agent-secret
+EOF
+
+docker compose -f compose.quickstart.yml --profile mikrotik up -d mikrotik-agent
+docker compose -f compose.quickstart.yml logs -f mikrotik-agent
 ```
 
 Configure each RouterOS HTTPS origin and credential in the Sites page. The
@@ -269,15 +333,25 @@ and make pending revocation debt visible.
 Use the controller's online SQLite backup command while the service is running:
 
 ```sh
-docker compose exec controller wiremesh-controller \
+mkdir -p backups
+backup_name="wiremesh-$(date -u +%Y%m%dT%H%M%SZ).db"
+
+docker compose -f compose.quickstart.yml exec controller wiremesh-controller \
   --database-url sqlite:///var/lib/wiremesh/wiremesh.db \
-  backup --output /var/lib/wiremesh/wiremesh-backup.db
+  backup --output "/var/lib/wiremesh/$backup_name"
+
+controller_id=$(docker compose -f compose.quickstart.yml ps -q controller)
+docker cp "$controller_id:/var/lib/wiremesh/$backup_name" "backups/$backup_name"
+
+# Store this copy separately from the database backup.
+sudo install -m 0400 -o root -g root \
+  secrets/master.key backups/wiremesh-master.key
 ```
 
-Copy the resulting database out of the volume and back it up separately from
-`secrets/master.key`. A restored database must use its matching master key.
-Keep SQLite and its WAL on a local filesystem; network filesystems are not
-supported.
+Move `backups/wiremesh-master.key` to a different protected backup location; do
+not leave the only key backup beside the database. A restored database must use
+its matching master key. Keep live SQLite and its WAL on a local filesystem;
+network filesystems are not supported.
 
 ### Subnet changes
 

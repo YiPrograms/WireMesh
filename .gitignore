@@ -7,3 +7,6 @@
 /*.db-wal
 /coverage
 /.cache
+/deploy/.env
+/deploy/secrets/
+/deploy/tls/
