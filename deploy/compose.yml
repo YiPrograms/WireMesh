@@ -8,13 +8,12 @@ services:
       - "8080:8080"
       - "8443:8443"
     environment:
-      WIREMESH_AGENT_TLS_CERT: /run/tls/controller.crt
-      WIREMESH_AGENT_TLS_KEY: /run/tls/controller.key
+      WIREMESH_HOSTNAME: ${WIREMESH_HOSTNAME:-vpn.example.org}
+      WIREMESH_BOOTSTRAP_ADMIN_EMAIL: ${WIREMESH_ADMIN_EMAIL:-admin@example.com}
+      WIREMESH_BOOTSTRAP_ADMIN_NAME: ${WIREMESH_ADMIN_NAME:-Administrator}
       RUST_LOG: wiremesh_controller=info,tower_http=info
     volumes:
       - wiremesh-data:/var/lib/wiremesh
-      - ./secrets/master.key:/run/secrets/wiremesh_master_key:ro
-      - ./tls:/run/tls:ro
     healthcheck:
       test: ["CMD", "/usr/local/bin/wiremesh-controller", "--database-url", "sqlite:///var/lib/wiremesh/wiremesh.db", "migrate"]
       interval: 30s
@@ -24,4 +23,3 @@ services:
 
 volumes:
   wiremesh-data:
-

@@ -23,11 +23,7 @@ enum Command {
     Serve {
         #[arg(long, env = "WIREMESH_LISTEN", default_value = "0.0.0.0:8080")]
         listen: SocketAddr,
-        #[arg(
-            long,
-            env = "WIREMESH_AGENT_LISTEN",
-            default_value = "0.0.0.0:8443"
-        )]
+        #[arg(long, env = "WIREMESH_AGENT_LISTEN", default_value = "0.0.0.0:8443")]
         agent_listen: SocketAddr,
         #[arg(long, env = "WIREMESH_AGENT_TLS_CERT")]
         agent_tls_cert: Option<PathBuf>,
@@ -51,6 +47,13 @@ enum Command {
         #[arg(long)]
         name: String,
     },
+    /// Create the initial administrator only if no enabled administrator exists.
+    BootstrapAdminIfNeeded {
+        #[arg(long)]
+        email: String,
+        #[arg(long)]
+        name: String,
+    },
     /// Provision an outbound gateway agent and print its secret exactly once.
     CreateAgent {
         #[arg(long)]
@@ -58,7 +61,7 @@ enum Command {
         #[arg(long, value_enum)]
         kind: AgentKind,
     },
-    /// Generate a new 256-bit master key. Store it outside the SQLite volume.
+    /// Generate a new 256-bit master key. Store it durably and protect it like a password.
     GenerateMasterKey,
     /// Create a transactionally consistent SQLite snapshot without stopping the controller.
     Backup {
@@ -107,12 +110,19 @@ async fn main() -> anyhow::Result<()> {
             println!("{}", serde_json::to_string_pretty(&result)?);
             Ok(())
         }
+        Command::BootstrapAdminIfNeeded { email, name } => {
+            if let Some(result) = auth::bootstrap_admin_if_needed(&pool, &email, &name).await? {
+                println!("{}", serde_json::to_string_pretty(&result)?);
+            }
+            Ok(())
+        }
         Command::CreateAgent { name, kind } => {
             let kind = match kind {
                 AgentKind::Linux => models::GatewayKindRequest::Linux,
                 AgentKind::Mikrotik => models::GatewayKindRequest::Mikrotik,
             };
-            let result = service::create_agent(&pool, models::CreateAgentRequest { name, kind }).await?;
+            let result =
+                service::create_agent(&pool, models::CreateAgentRequest { name, kind }).await?;
             println!("{}", serde_json::to_string_pretty(&result)?);
             Ok(())
         }
@@ -126,9 +136,11 @@ async fn main() -> anyhow::Result<()> {
                 .filter(|path| !path.as_os_str().is_empty())
                 .unwrap_or_else(|| std::path::Path::new("."));
             tokio::fs::create_dir_all(parent).await?;
-            let output = parent
-                .canonicalize()?
-                .join(output.file_name().context("backup output must name a file")?);
+            let output = parent.canonicalize()?.join(
+                output
+                    .file_name()
+                    .context("backup output must name a file")?,
+            );
             sqlx::query("VACUUM INTO ?")
                 .bind(output.to_string_lossy().as_ref())
                 .execute(&pool)
@@ -179,10 +191,10 @@ async fn main() -> anyhow::Result<()> {
                         web_directory: Some(web_directory),
                     }),
                 )
-                    .with_graceful_shutdown(async move {
-                        let _ = shutdown.recv().await;
-                    })
-                    .await?;
+                .with_graceful_shutdown(async move {
+                    let _ = shutdown.recv().await;
+                })
+                .await?;
                 Ok(())
             });
             if let Some((certificate, key)) = tls {

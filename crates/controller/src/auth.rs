@@ -53,7 +53,9 @@ impl Principal {
         if self.is_admin {
             Ok(())
         } else {
-            Err(ApiError::Forbidden("administrator access is required".into()))
+            Err(ApiError::Forbidden(
+                "administrator access is required".into(),
+            ))
         }
     }
 
@@ -61,7 +63,9 @@ impl Principal {
         if self.is_admin || self.id == user_id {
             Ok(())
         } else {
-            Err(ApiError::Forbidden("the resource belongs to another user".into()))
+            Err(ApiError::Forbidden(
+                "the resource belongs to another user".into(),
+            ))
         }
     }
 }
@@ -86,7 +90,9 @@ pub async fn require_session(
     .ok_or_else(|| ApiError::Unauthorized("session is invalid or expired".into()))?;
     let disabled: bool = row.try_get::<bool, _>("manual_disabled")?
         || row.try_get::<bool, _>("ldap_disabled")?
-        || row.try_get::<Option<String>, _>("soft_deleted_at")?.is_some();
+        || row
+            .try_get::<Option<String>, _>("soft_deleted_at")?
+            .is_some();
     if disabled {
         return Err(ApiError::Forbidden("user is disabled".into()));
     }
@@ -162,17 +168,16 @@ pub async fn bootstrap_admin(
             id
         }
     };
-    let group_id = match sqlx::query_scalar::<_, String>(
-        "SELECT id FROM groups WHERE normalized_name=?",
-    )
-    .bind(ADMIN_GROUP)
-    .fetch_optional(&mut *transaction)
-    .await?
-    {
-        Some(id) => id,
-        None => {
-            let id = Uuid::now_v7().to_string();
-            sqlx::query(
+    let group_id =
+        match sqlx::query_scalar::<_, String>("SELECT id FROM groups WHERE normalized_name=?")
+            .bind(ADMIN_GROUP)
+            .fetch_optional(&mut *transaction)
+            .await?
+        {
+            Some(id) => id,
+            None => {
+                let id = Uuid::now_v7().to_string();
+                sqlx::query(
                 "INSERT INTO groups(id,normalized_name,display_name,created_at) VALUES(?,?,?,?)",
             )
             .bind(&id)
@@ -181,9 +186,9 @@ pub async fn bootstrap_admin(
             .bind(&timestamp)
             .execute(&mut *transaction)
             .await?;
-            id
-        }
-    };
+                id
+            }
+        };
     sqlx::query(
         "INSERT INTO group_memberships(id,group_id,user_id,source_kind,source_id,active,updated_at)
          VALUES(?,?,?,?,?,1,?)
@@ -235,13 +240,44 @@ pub async fn bootstrap_admin(
     })
 }
 
+/// Bootstrap the requested administrator only when the installation has no
+/// enabled administrator. This makes container first-start initialization
+/// idempotent without replacing enrollment tokens on every restart.
+pub async fn bootstrap_admin_if_needed(
+    pool: &SqlitePool,
+    email: &str,
+    name: &str,
+) -> Result<Option<BootstrapResult>, ApiError> {
+    let enabled_administrators: i64 = sqlx::query_scalar(
+        "SELECT COUNT(DISTINCT u.id) FROM users u
+         JOIN effective_group_memberships gm ON gm.user_id=u.id
+         JOIN groups g ON g.id=gm.group_id AND g.normalized_name=?
+         WHERE u.manual_disabled=0 AND u.ldap_disabled=0 AND u.soft_deleted_at IS NULL",
+    )
+    .bind(ADMIN_GROUP)
+    .fetch_one(pool)
+    .await?;
+    if enabled_administrators > 0 {
+        return Ok(None);
+    }
+    bootstrap_admin(pool, email, name).await.map(Some)
+}
+
 pub async fn issue_enrollment_token(
     pool: &SqlitePool,
     secrets: &SecretBox,
     actor: Uuid,
     user_id: Uuid,
 ) -> Result<IssuedTokenResponse, ApiError> {
-    issue_user_token(pool, secrets, actor, user_id, "enrollment", ENROLLMENT_DAYS * 24).await
+    issue_user_token(
+        pool,
+        secrets,
+        actor,
+        user_id,
+        "enrollment",
+        ENROLLMENT_DAYS * 24,
+    )
+    .await
 }
 
 pub async fn issue_reset_token(
@@ -271,7 +307,9 @@ async fn issue_user_token(
     .ok_or_else(|| ApiError::NotFound("user does not exist".into()))?;
     ensure_row_enabled(&row)?;
     if row.try_get::<Option<String>, _>("purged_at")?.is_some() {
-        return Err(ApiError::Conflict("purged users cannot receive tokens".into()));
+        return Err(ApiError::Conflict(
+            "purged users cannot receive tokens".into(),
+        ));
     }
     let email: String = row.try_get("email")?;
     if purpose == "reset" {
@@ -335,7 +373,9 @@ async fn issue_user_token(
     }
     let job_id = Uuid::now_v7();
     #[derive(Serialize)]
-    struct MailToken<'a> { token: &'a str }
+    struct MailToken<'a> {
+        token: &'a str,
+    }
     let envelope = secrets
         .encrypt(&format!("mail-job:{job_id}"), &MailToken { token: &token })
         .map_err(|error| ApiError::Internal(error.into()))?;
@@ -367,7 +407,11 @@ async fn issue_user_token(
         &mut transaction,
         Some(actor),
         "user",
-        if purpose == "reset" { "auth.reset.issue" } else { "auth.enrollment.issue" },
+        if purpose == "reset" {
+            "auth.reset.issue"
+        } else {
+            "auth.enrollment.issue"
+        },
         "user",
         Some(user_id),
     )
@@ -597,7 +641,9 @@ pub fn clear_session_cookie() -> HeaderValue {
 }
 
 fn session_token(headers: &HeaderMap) -> Option<&str> {
-    if let Some(value) = headers.get(header::AUTHORIZATION).and_then(|v| v.to_str().ok())
+    if let Some(value) = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
         && let Some(token) = value.strip_prefix("Bearer ")
     {
         return Some(token);
@@ -688,7 +734,9 @@ async fn is_admin(pool: &SqlitePool, user_id: Uuid) -> Result<bool, ApiError> {
 fn ensure_row_enabled(row: &sqlx::sqlite::SqliteRow) -> Result<(), ApiError> {
     let disabled = row.try_get::<bool, _>("manual_disabled")?
         || row.try_get::<bool, _>("ldap_disabled")?
-        || row.try_get::<Option<String>, _>("soft_deleted_at")?.is_some();
+        || row
+            .try_get::<Option<String>, _>("soft_deleted_at")?
+            .is_some();
     if disabled {
         Err(ApiError::Forbidden("user is disabled".into()))
     } else {
@@ -757,16 +805,38 @@ mod tests {
         .unwrap();
         assert!(principal.is_admin);
         assert!(!token.is_empty());
-        assert!(enroll(&pool, &bootstrap.enrollment_token, "another long password")
-            .await
-            .is_err());
+        assert!(
+            enroll(&pool, &bootstrap.enrollment_token, "another long password")
+                .await
+                .is_err()
+        );
         let hash: String = sqlx::query_scalar("SELECT password_hash FROM local_passwords")
             .fetch_one(&pool)
             .await
             .unwrap();
         assert!(hash.contains("m=65536,t=3,p=1"));
-        assert!(login_local(&pool, "admin@example.com", "a sufficiently long password")
+        assert!(
+            login_local(&pool, "admin@example.com", "a sufficiently long password")
+                .await
+                .is_ok()
+        );
+    }
+
+    #[tokio::test]
+    async fn automatic_bootstrap_only_runs_without_an_enabled_admin() {
+        let pool = pool().await;
+        let first = bootstrap_admin_if_needed(&pool, "admin@example.com", "Admin")
             .await
-            .is_ok());
+            .unwrap();
+        assert!(first.is_some());
+        let second = bootstrap_admin_if_needed(&pool, "other@example.com", "Other")
+            .await
+            .unwrap();
+        assert!(second.is_none());
+        let users: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(users, 1);
     }
 }

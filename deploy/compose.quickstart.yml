@@ -7,13 +7,12 @@ services:
       - "${WIREMESH_HTTP_BIND:-127.0.0.1}:${WIREMESH_HTTP_PORT:-8080}:8080"
       - "${WIREMESH_AGENT_PORT:-8443}:8443"
     environment:
-      WIREMESH_AGENT_TLS_CERT: /run/tls/controller.crt
-      WIREMESH_AGENT_TLS_KEY: /run/tls/controller.key
+      WIREMESH_HOSTNAME: ${WIREMESH_HOSTNAME:-vpn.example.org}
+      WIREMESH_BOOTSTRAP_ADMIN_EMAIL: ${WIREMESH_ADMIN_EMAIL:-admin@example.com}
+      WIREMESH_BOOTSTRAP_ADMIN_NAME: ${WIREMESH_ADMIN_NAME:-Administrator}
       RUST_LOG: ${RUST_LOG:-wiremesh_controller=info,tower_http=info}
     volumes:
       - wiremesh-data:/var/lib/wiremesh
-      - ./secrets/master.key:/run/secrets/wiremesh_master_key:ro
-      - ./tls:/run/tls:ro
     healthcheck:
       test:
         - CMD
@@ -26,22 +25,5 @@ services:
       retries: 6
       start_period: 10s
 
-  mikrotik-agent:
-    image: ${WIREMESH_MIKROTIK_IMAGE:-ghcr.io/yiprograms/wiremesh-mikrotik-agent:latest}
-    profiles: [mikrotik]
-    restart: unless-stopped
-    init: true
-    environment:
-      WIREMESH_CONTROLLER_URL: https://${WIREMESH_HOST:?Set WIREMESH_HOST}:${WIREMESH_AGENT_PORT:-8443}
-      WIREMESH_CONTROLLER_SERVER_NAME: ${WIREMESH_HOST}
-      WIREMESH_CONTROLLER_CA: /run/controller-ca/controller-ca.pem
-      WIREMESH_AGENT_ID: ${WIREMESH_AGENT_ID:-}
-      WIREMESH_AGENT_SECRET: ${WIREMESH_AGENT_SECRET:-}
-      WIREMESH_STATE_DIRECTORY: /var/lib/wiremesh
-    volumes:
-      - mikrotik-agent-data:/var/lib/wiremesh
-      - ./tls/controller-ca.pem:/run/controller-ca/controller-ca.pem:ro
-
 volumes:
   wiremesh-data:
-  mikrotik-agent-data:

@@ -1,0 +1,18 @@
+services:
+  mikrotik-agent:
+    image: ${WIREMESH_MIKROTIK_IMAGE:-ghcr.io/yiprograms/wiremesh-mikrotik-agent:latest}
+    restart: unless-stopped
+    init: true
+    environment:
+      WIREMESH_CONTROLLER_URL: https://controller:8443
+      WIREMESH_CONTROLLER_SERVER_NAME: ${WIREMESH_HOSTNAME:-vpn.example.org}
+      WIREMESH_CONTROLLER_CA: /controller-data/tls/controller-ca.pem
+      WIREMESH_AGENT_ID: ${WIREMESH_AGENT_ID:?Set WIREMESH_AGENT_ID}
+      WIREMESH_AGENT_SECRET: ${WIREMESH_AGENT_SECRET:?Set WIREMESH_AGENT_SECRET}
+      WIREMESH_STATE_DIRECTORY: /var/lib/wiremesh
+    volumes:
+      - wiremesh-data:/controller-data:ro
+      - mikrotik-agent-data:/var/lib/wiremesh
+
+volumes:
+  mikrotik-agent-data:
